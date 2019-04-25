@@ -1,0 +1,387 @@
+---
+title: "proj2"
+author: "Xuanfu Lu"
+partner: "Honghao Huang"
+date: "4/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading packages}
+# graphing
+library(ggplot2)
+library(gridExtra)
+library(plotly)
+library(corrgram)
+library(corrplot)
+
+# maybe helpful in the PCA analysis
+library(ggfortify)  
+library(FactoMineR)
+library(factoextra)
+
+# CV
+library(MASS)
+library(caret)
+library('e1071')
+
+# ROC
+library(ROCR)
+library(pROC)
+library(gplots)
+```
+
+```{r read the image_data}
+# read image_data (this step can take quite some time)
+image1 <- read.csv(file = "image_data/image1.txt", sep ="", header = FALSE)
+image2 <- read.csv(file = "image_data/image2.txt", sep ="", header = FALSE)
+image3 <- read.csv(file = "image_data/image3.txt", sep ="", header = FALSE)
+
+# change the column names for better understanding
+feature_name <- c("y", "x", "expert", "NDAI", "SD", "CORR", "DF", "CF", "BF", "AF", "AN")
+colnames(image1) <- feature_name
+colnames(image2) <- feature_name
+colnames(image3) <- feature_name
+
+# aggregate the data
+image0 <- rbind(image1, image2, image3)
+image0_labeled <- image0[image0$expert!=0,]
+
+# Ham: make the same for image 1,2,3 as well
+image1_labeled <- image1[image1$expert!=0,]
+image2_labeled <- image2[image2$expert!=0,]
+image3_labeled <- image3[image3$expert!=0,]
+```
+
+```{r auxiliary functions}
+source("auxiliary_func.R")
+```
+
+# Part I: Data Collection and Exploration
+## a) no code
+This part involves no code.
+## b)
+### summarize the data
+```{r class percentage}
+# percentage of pixels for the different classes
+class_percentage <- rbind(percent(table(num2class(image1$expert))/nrow(image1)),
+                          percent(table(num2class(image2$expert))/nrow(image2)),
+                          percent(table(num2class(image3$expert))/nrow(image3)),
+                          percent(table(num2class(image0$expert))/nrow(image0)))
+rownames(class_percentage) <- c("image1", "image2", "image3", "total")
+colnames(class_percentage) <- c("cloudy", "unlabeled", "clear")
+class_percentage
+```
+
+```{r general summary}
+# genearl summary of the aggregated image data
+summary(image0)
+
+# Ham: add some summary just in case
+summary(image1)
+summary(image2)
+summary(image3)
+```
+SUMMARY: for entire image data, the range of x, y coordinats is [65,369] and [2,383], respectively.
+SUMMARY: DF,CF,BF,AF,AN have similar range but in decreasing order.
+SUMMARY: in the labeled data, number of clear pixel is bigger than number of cloudy pixel.
+### plot well-labeled maps
+```{r graphs}
+# graphing (this step can take quite some time)
+# note: I flipped the y-axis to make graphs consistent with graphs in the paper
+i1 <- ggplot(data = image1, aes(x=x, y=y)) +
+  geom_point(colour = num2col(image1$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "Image 1") + scale_y_reverse()
+
+i2 <- ggplot(data = image2, aes(x=x, y=y)) +
+  geom_point(colour = num2col(image2$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "Image 2") + scale_y_reverse()
+
+i3 <- ggplot(data = image3, aes(x=x, y=y)) +
+  geom_point(colour = num2col(image3$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "Image 3") + scale_y_reverse()
+
+grid.arrange(i1,i2,i3, nrow=1)
+```
+OBSERVATION: Clearly, cloudness shows some grouping, which means cloudy area is more likely to have its neighbors being cloudy, and vice versa. Also, the shape and size of the cloudy areas are irregular, although most cloudy areas have an ellipsoid outline.
+CONCLUSION: i.i.d. assumption is not justified for this data set.
+##c) EDA
+### pairwise relationships
+```{r overall correlogram}
+# cannot run corrgram() function, takes too long
+# try corrplot() function
+corrplot.mixed(cor(image0), lower="number", upper="color", order="hclust", tl.col = "black")
+```
+OBSERVATION: NDAI is positively correlated with SD, expert label (not very strong correlation though); negatively correlated   with all the rest features.
+OBSERVATION: DF,AF,AN,CF,BF are positively correlated with each other (this is very intuitive). [validated that these measurements make sense, it's unlikely the case that one of the camera is malfuncitoning]
+OBSERVATION: y coordinate is more related to radiance reading than x coordinate.
+```{r PCA among radiance}
+# create a data frame containing all 5 radiance readings in the entire data (including unlabeled)
+radiance <- image0[,7:11]
+# visualize PCA (onto first 2 PC) using standardized data
+radiance_std <- scale(radiance, center=TRUE, scale=TRUE)
+#Ham: tweak a little to incoporate quantitative information of pca
+radiance_pca <- PCA(radiance_std, graph=FALSE)
+#Ham: eigenvalues and variance explained 
+radiance_pca$eig
+fviz_pca_var(radiance_pca, col.var = "red")
+# screeplot
+eigenvalues <- eigen(t(radiance_std) %*% radiance_std)$values
+plot(cumsum(eigenvalues) / sum(eigenvalues), main = "Scree Plot", ylab = "Eigenvalues", xlab = "Component Number")
+```
+OBSERVATION: all radiance readings are positively correlated (they lie in the same direction).
+OBSERVATION: 1st principal component captures 84.6% of variance. first 2 PCs capture above 96% of the variability.
+CONCLUSION: studying the radiance readings themself may not have much results; some transformation would be very helpful; the NDAI feature created by Yu Bin and her team is very brilliant in terms of capturing the changes in a scene with changes in the MISR view direction.
+### differences between two classes
+```{r histogram by class}
+# other features
+  # Ham: add some summery
+summary(image0[which(image0$expert == 1),]$NDAI)
+summary(image0[which(image0$expert == -1),]$NDAI)
+ggplot(data=image0_labeled, aes(x=NDAI, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of NDAI by cloudiness")
+
+summary(image0[which(image0$expert == 1),]$SD)
+summary(image0[which(image0$expert == -1),]$SD)
+ggplot(data=image0_labeled, aes(x=SD, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of SD by cloudiness")
+
+summary(image0[which(image0$expert == 1),]$CORR)
+summary(image0[which(image0$expert == -1),]$CORR)
+ggplot(data=image0_labeled, aes(x=CORR, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of CORR by cloudiness")
+
+# radiance reading
+DF <- ggplot(data=image0_labeled, aes(x=DF, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of DF radiance")
+CF <- ggplot(data=image0_labeled, aes(x=CF, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of CF radiance")
+BF <- ggplot(data=image0_labeled, aes(x=BF, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of BF radiance")
+AF <- ggplot(data=image0_labeled, aes(x=AF, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of AF radiance")
+AN <- ggplot(data=image0_labeled, aes(x=AN, color=num2class(expert)))+
+  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+  labs(title = "Histogram of AN radiance")
+grid.arrange(DF,CF,BF,AF,AN, ncol=2)
+```
+OBSERVATION: NDAI feature shows strong diversification for cloudy and clear areas. Very clearly, clear areas have less NDAI than cloudy areas. This feature could be very helpful in later part of the project.
+OBSERVATION: radiance reading: clear areas seem to have a bimodal histogram of radiance reading (all 5 of them) while cloudy areas have single-mode histogram of radiance reading. Cloudy areas have longer left-side tails. Clear areas seem to have slightly higher radiance reading (this is consistent with the paper finding as well).
+OBSERVATION: clear areas tend to have smaller SD (shorter right tails, peak around 0) than cloudy areas.
+OBSERVATION: clear areas tend to have smaller and less spreading CORR than cloudy areas.
+```{r 3D scatterplot}
+# 3D plot 太卡了
+# 暂时战术放弃
+```
+
+# Part II: Preparation
+## a) split data
+```{r method1: by image}
+# training data is one of the images
+# validation data is one of the other two images
+# the last image is the testing data
+data_tr1 <- image1
+data_va1 <- image2
+data_te1 <- image3
+# Yu bin says this is NOT OK
+```
+
+```{r method2: divide & forge}
+# images are already ordered by coordiantes
+# first divide the images:
+K <- 4
+set.seed(154666) # the next few lines of code involve random sampling, set seed to be consistent.
+images_divided <- list(divide_image(image1, K), divide_image(image2, K), divide_image(image3, K))
+
+# forge the new images using divided pieces:
+new_images <- forge_new_image(images_divided, K)
+data_tr2 <- new_images[[1]]
+data_va2 <- new_images[[2]]
+data_te2 <- new_images[[3]]
+
+# the forged image should look like:
+ggplot(data = data_te2, aes(x=x, y=y)) +
+  geom_point(colour = num2col(data_te2$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "forged new image") + scale_y_reverse()
+```
+
+```{r method3: divide & sample}
+
+```
+
+```{r method4: blur image}
+# most likely to be shitty
+```
+
+## b) trivial classifier
+The trivial classifier will have high accuracy if the data split is not good in the sense that it splits almost all the terrain into the testing data. It is the only occassian where the trivial classifier obtains high accuracy. However, this splitting is problematic because it does not represent the reality. Because the trivial classifier does not do well according to our way of splitting the data, we can be more certain that our splitting method is not trivial.
+```{r method1}
+# since method1 only has 6 possible combinations, we are going to exhaust
+a1 <- sum(image1$expert == -1)/nrow(image2)
+a2 <- sum(image2$expert == -1)/nrow(image2)
+a3 <- sum(image3$expert == -1)/nrow(image2)
+accuracy_report1 <- rbind(c(a2,a3), c(a3,a2), c(a1,a2), c(a2,a1), c(a1,a3), c(a3,a1))
+accuracy_report1 <- rbind(accuracy_report1, c(mean(accuracy_report1[,1]), mean(accuracy_report1[,2])))
+accuracy_report1 <- as.data.frame(accuracy_report1)
+colnames(accuracy_report1) <- c("val_accuracy","test_accuracy")
+rownames(accuracy_report1) <- c(1:6,"average")
+accuracy_report1
+```
+
+```{r method2}
+# since method2 has way too many combinations, we are not going to exhaust them
+a1 <- sum(data_va2$expert == -1)/nrow(data_va2)
+a2 <- sum(data_te2$expert == -1)/nrow(data_te2)
+accuracy_report2 <- data.frame(val_accuracy = a1, test_accuracy = a2)
+accuracy_report2
+```
+## c) feature importance
+potentially:
+1. plot histogram of each feature colored by label (just like PART I.c) and maximize the distance between mean
+2. clustering using EM & K-means (using 1 feature) 结果和1应该会一样
+3. clustering (pairwise) DOABLE?
+```{r separation & correlation method}
+# obtain the cloudy & clear regions
+image_cloud <- image0[which(image0$expert == 1), ]
+image_terr <- image0[which(image0$expert == -1), ]
+# initialize the vector whose elements will be the average of each features
+avg_cloud <- c()
+avg_terr <- c()
+# put values in
+for (i in 1:ncol(image0)){
+  avg_cloud[i] <- mean(scale(image_cloud[,i], center = FALSE))
+  avg_terr[i] <- mean(scale(image_terr[,i], center = FALSE))
+}
+# calculate the avg(cloud) - avg(terrain). The feature that maximizes this difference is considered good
+avg_diff <- cbind(names(image0), abs(avg_cloud - avg_terr))
+colnames(avg_diff) = c('feature', 'mean_difference')
+# ignore the expert, x, y row
+avg_diff <- data.frame(avg_diff[-3,][-1,][-1,])
+# form order
+avg_diff$feature <- factor(avg_diff$feature, levels = avg_diff$feature[order(avg_diff$mean_difference, decreasing = TRUE)])
+# quant:
+avg_diff
+# plot
+ggplot(data = avg_diff, aes(x = feature, y = mean_difference)) + 
+  geom_bar(stat = "identity") +
+  labs(title = "standardized difference between class mean by feature")
+
+# correlation
+corr <- cbind(names(image0), abs(cor(image0))[3,])
+corr <- data.frame(corr[-1,][-1,][-1,])
+colnames(corr) <- c('feature', 'corr_btw_label')
+rownames(corr) <- 1:8
+corr$feature <- factor(corr$feature, levels = corr$feature[order(corr$corr_btw_label, decreasing = TRUE)])
+# quant:
+corr
+# plot:
+ggplot(data=corr, aes(x = feature, y = corr_btw_label)) + 
+  geom_bar(stat = "identity") +
+  labs(title = "correlation between features and labels")
+```
+we choose the "best features" based on top 3 from the separation & correlation analysis.
+## d) generic CV function
+```{r}
+source("CVgeneric.R")
+```
+# PART III. Modeling
+## a) models & CV
+LDA requires no standardization on the feature
+```{r set training & testing data}
+tr <- rbind(data_tr2, data_va2)
+te <- data_te2
+
+######################################## do not change the below
+tr <- tr[tr$expert != 0,]
+# tr <- tr[sample(1:nrow(tr), size = 1000),]
+tr_ft <- as.data.frame(cbind(tr$NDAI, tr$CORR, tr$SD))
+colnames(tr_ft) <- c("NDAI", "CORR", "SD")
+tr_lb <- as.factor(tr$expert)
+tr <- cbind(tr_ft, tr_lb)
+colnames(tr) <- c(colnames(tr_ft), "expert")
+te <- te[te$expert != 0,]
+te_ft <- as.data.frame(cbind(te$NDAI, te$CORR, te$SD))
+colnames(te_ft) <- c("NDAI", "CORR", "SD")
+te_lb <- as.factor(te$expert)
+te <- cbind(te_ft, te_lb)
+colnames(te) <- c(colnames(te_ft), "expert")
+```
+
+```{r CV on training}
+LDA_CV <- CVgeneric(lda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+QDA_CV <- CVgeneric(qda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+GLM_CV <- CVgeneric(glm.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+
+CV_result <- cbind(LDA_CV, QDA_CV, GLM_CV)
+colnames(CV_result) <- c("LDA", "QDA", "GLM")
+CV_result
+```
+From CV, QDA is the best classifier.
+## b) ROC
+```{r generating ROC}
+# LDA
+LDA_fit <- lda(expert ~., data = tr)
+LDA_pred <- predict(LDA_fit, te)
+    # choose the posterior probability column carefully, it may be 
+    # lda.pred$posterior[,1] or lda.pred$posterior[,2], depending on your factor levels 
+pred_LDA <- prediction(LDA_pred$posterior[,2], labels = te$expert)
+perf_LDA <- performance(pred_LDA, "tpr", "fpr")
+auc_LDA <- performance(pred_LDA, measure = "auc")
+
+# QDA
+QDA_fit <- qda(expert ~., data = tr)
+QDA_pred <- predict(QDA_fit, te)
+pred_QDA <- prediction(QDA_pred$posterior[,2], labels = te$expert)
+perf_QDA <- performance(pred_QDA, "tpr", "fpr")
+auc_QDA <- performance(pred_QDA, measure = "auc")
+
+# GLM
+GLM_fit <- glm(expert ~., data = tr, family = binomial)
+GLM_prob <- predict(GLM_fit, te, type = "response")
+pred_GLM <- prediction(GLM_prob, labels = te$expert)
+perf_GLM <- performance(pred_GLM, "tpr", "fpr")
+auc_GLM <- performance(pred_GLM, measure = "auc")
+```
+
+```{r AUC analysis}
+AUC <- rbind(auc_LDA@y.values[[1]], auc_QDA@y.values[[1]], auc_GLM@y.values[[1]])
+rownames(AUC) <- c("LDA", "QDA", "GLM")
+colnames(AUC) <- "AUC"
+AUC
+```
+
+```{r graphing ROC}
+par(mfrow=c(2,2))
+plot(perf_LDA, colorize = TRUE, main = "LDA ROC")
+  abline(a = 0, b = 1)
+  text(0.8, 0.2, "AUC = 0.9476")
+plot(perf_QDA, colorize = TRUE, main = "QDA ROC")
+  abline(a = 0, b = 1)
+  text(0.8, 0.2, "AUC = 0.9551")
+plot(perf_GLM, colorize = TRUE, main = "Logistic Regression ROC")
+  abline(a = 0, b = 1)
+  text(0.8, 0.2, "AUC = 0.9472")
+```
+## c) IC test
+```{r aAIC}
+
+```
+
+```{r BIC}
+
+```
+# PART IV. Diagnostics
