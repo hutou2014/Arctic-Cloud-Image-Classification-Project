@@ -23,7 +23,7 @@ library(ggfortify)
 library(FactoMineR)
 library(factoextra)
 
-# CV
+# CV & modeling
 library(MASS)
 library(caret)
 library('e1071')
@@ -51,9 +51,9 @@ image0 <- rbind(image1, image2, image3)
 image0_labeled <- image0[image0$expert!=0,]
 
 # Ham: make the same for image 1,2,3 as well
-image1_labeled <- image1[image1$expert!=0,]
-image2_labeled <- image2[image2$expert!=0,]
-image3_labeled <- image3[image3$expert!=0,]
+image1_labeled <- image1[image1$expert != 0,]
+image2_labeled <- image2[image2$expert != 0,]
+image3_labeled <- image3[image3$expert != 0,]
 ```
 
 ```{r auxiliary functions}
@@ -66,13 +66,22 @@ This part involves no code.
 ## b)
 ### summarize the data
 ```{r class percentage}
-# percentage of pixels for the different classes
+# percentage of pixels for the different classes (total image)
 class_percentage <- rbind(percent(table(num2class(image1$expert))/nrow(image1)),
                           percent(table(num2class(image2$expert))/nrow(image2)),
                           percent(table(num2class(image3$expert))/nrow(image3)),
                           percent(table(num2class(image0$expert))/nrow(image0)))
 rownames(class_percentage) <- c("image1", "image2", "image3", "total")
-colnames(class_percentage) <- c("cloudy", "unlabeled", "clear")
+colnames(class_percentage) <- c("clear", "cloudy", "unlabeled")
+class_percentage
+
+# percentage of pixels for the different classes (labeled only)
+class_percentage <- rbind(percent(table(num2class(image1_labeled$expert))/nrow(image1_labeled)),
+                          percent(table(num2class(image2_labeled$expert))/nrow(image2_labeled)),
+                          percent(table(num2class(image3_labeled$expert))/nrow(image3_labeled)),
+                          percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
+rownames(class_percentage) <- c("image1_labeled", "image2_labeled", "image3_labeled", "total_labeled")
+colnames(class_percentage) <- c("clear", "cloudy")
 class_percentage
 ```
 
@@ -92,17 +101,17 @@ SUMMARY: in the labeled data, number of clear pixel is bigger than number of clo
 ```{r graphs}
 # graphing (this step can take quite some time)
 # note: I flipped the y-axis to make graphs consistent with graphs in the paper
-i1 <- ggplot(data = image1, aes(x=x, y=y)) +
+i1 <- ggplot(data = image1, aes(x = x, y = y)) +
   geom_point(colour = num2col(image1$expert), size = 0.1) +
   xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
   labs(title = "Image 1") + scale_y_reverse()
 
-i2 <- ggplot(data = image2, aes(x=x, y=y)) +
+i2 <- ggplot(data = image2, aes(x = x, y = y)) +
   geom_point(colour = num2col(image2$expert), size = 0.1) +
   xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
   labs(title = "Image 2") + scale_y_reverse()
 
-i3 <- ggplot(data = image3, aes(x=x, y=y)) +
+i3 <- ggplot(data = image3, aes(x = x, y = y)) +
   geom_point(colour = num2col(image3$expert), size = 0.1) +
   xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
   labs(title = "Image 3") + scale_y_reverse()
@@ -202,38 +211,91 @@ data_te1 <- image3
 ```{r method2: divide & forge}
 # images are already ordered by coordiantes
 # first divide the images:
-K <- 4
-set.seed(154666) # the next few lines of code involve random sampling, set seed to be consistent.
+K <- 6
+set.seed(154668) # the next few lines of code involve random sampling, set seed to be consistent.
 images_divided <- list(divide_image(image1, K), divide_image(image2, K), divide_image(image3, K))
 
 # forge the new images using divided pieces:
 new_images <- forge_new_image(images_divided, K)
-data_tr2 <- new_images[[1]]
-data_va2 <- new_images[[2]]
-data_te2 <- new_images[[3]]
+data_tr2 <- new_images[[1]][new_images[[1]]$expert != 0,]
+data_va2 <- new_images[[2]][new_images[[2]]$expert != 0,]
+data_te2 <- new_images[[3]][new_images[[3]]$expert != 0,]
 
 # the forged image should look like:
-ggplot(data = data_te2, aes(x=x, y=y)) +
+ggplot(data = data_te2, aes(x = x, y = y)) +
   geom_point(colour = num2col(data_te2$expert), size = 0.1) +
   xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
   labs(title = "forged new image") + scale_y_reverse()
 ```
 
-```{r method3: divide & sample}
+```{r method3: divide & random sample}
+# essentially this would be the same as method2
+# method2 is stratified random sampling
+# method3 is simple random sampling
+# they are essentially the same
+# this method will not have a graph
+set.seed(123456)
+# images_divided is already created
 
+# forge the new images using divided pieces:
+new_images <- forge_random(images_divided, K)
+data_tr3 <- new_images[[1]][new_images[[1]]$expert != 0,]
+data_va3 <- new_images[[2]][new_images[[2]]$expert != 0,]
+data_te3 <- new_images[[3]][new_images[[3]]$expert != 0,]
+
+ggplot(data = data_te3, aes(x = x, y = y)) +
+  geom_point(colour = num2col(data_te3$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "forged new image") + scale_y_reverse()
 ```
-
+the image is normal, because this is completely randomly sampling.
+there exist some missing areas because there exist equal number of overlapping areas.
 ```{r method4: blur image}
-# most likely to be shitty
-```
+# read the blurred images (they are constructed using a separate R. file)
+# constructing superpixels are computational complex, takes too much time, thus done separately
+image1_blur <- read.csv(file = "image_data/image1_blur.csv", header = TRUE)
+image2_blur <- read.csv(file = "image_data/image2_blur.csv", header = TRUE)
+image3_blur <- read.csv(file = "image_data/image3_blur.csv", header = TRUE)
+image0_blur <- rbind(image1_blur, image2_blur, image3_blur)
 
+# randomly select pixels from the all constructed super pixels:
+temp_storage <- rep(list(NA), 3)
+select_index <- 1:nrow(image0_blur)
+for (i in 1:3) {
+  temp_index <- sample(na.omit(select_index), size = nrow(image0_blur) %/% 3)
+  select_index[temp_index] <- NA
+  temp_storage[[i]] <- image0_blur[temp_index,]
+}
+data_tr4 <- temp_storage[[1]]
+data_va4 <- temp_storage[[2]]
+data_te4 <- temp_storage[[3]]
+
+# plot the blurred image (just to demonstrate)
+i1 <- ggplot(data = image1_blur, aes(x = x, y = y)) +
+  geom_point(colour = num2col(image1_blur$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "Image 1 (super-pixel)") + scale_y_reverse()
+i2 <- ggplot(data = image2_blur, aes(x = x, y = y)) +
+  geom_point(colour = num2col(image2_blur$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "Image 2 (super-pixel)") + scale_y_reverse()
+i3 <- ggplot(data = image3_blur, aes(x = x, y = y)) +
+  geom_point(colour = num2col(image3_blur$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "Image 3 (super-pixel)") + scale_y_reverse()
+grid.arrange(i1,i2,i3, nrow=1)
+```
+method4 could potentially be the most helpful method, but the drawback is also very obvious: reduced number of observations
+method4 takes account of dependency of pixels with neighborhood. In later part we will show that x, y coordinates are not our "best" features, and they will not be passed into modeling. Therefore, method4 (blurring / smoothing) is the only way to take dependancy into account for modeling.
 ## b) trivial classifier
+The best splitting method's accuracy using a trivial classifier should be around the true percent of "clear" label in the entire given data. It means that the splitting does a good job in representing the whole data.
 The trivial classifier will have high accuracy if the data split is not good in the sense that it splits almost all the terrain into the testing data. It is the only occassian where the trivial classifier obtains high accuracy. However, this splitting is problematic because it does not represent the reality. Because the trivial classifier does not do well according to our way of splitting the data, we can be more certain that our splitting method is not trivial.
+Also, for methods with "good" trivial accuracy, we will run additional stability test to select the best splitting method.
 ```{r method1}
 # since method1 only has 6 possible combinations, we are going to exhaust
-a1 <- sum(image1$expert == -1)/nrow(image2)
-a2 <- sum(image2$expert == -1)/nrow(image2)
-a3 <- sum(image3$expert == -1)/nrow(image2)
+a1 <- sum(image1_labeled$expert == -1)/nrow(image1_labeled)
+a2 <- sum(image2_labeled$expert == -1)/nrow(image2_labeled)
+a3 <- sum(image3_labeled$expert == -1)/nrow(image3_labeled)
 accuracy_report1 <- rbind(c(a2,a3), c(a3,a2), c(a1,a2), c(a2,a1), c(a1,a3), c(a3,a1))
 accuracy_report1 <- rbind(accuracy_report1, c(mean(accuracy_report1[,1]), mean(accuracy_report1[,2])))
 accuracy_report1 <- as.data.frame(accuracy_report1)
@@ -241,14 +303,115 @@ colnames(accuracy_report1) <- c("val_accuracy","test_accuracy")
 rownames(accuracy_report1) <- c(1:6,"average")
 accuracy_report1
 ```
-
+OBSERVATION: trivial splitting result is not very good, the stability is very week (we can tell this without calculating the sd), and the average is away from the true label percentage.
+keep in mind that the total observations has 61.08% of pixels labeled as "clear".
 ```{r method2}
-# since method2 has way too many combinations, we are not going to exhaust them
-a1 <- sum(data_va2$expert == -1)/nrow(data_va2)
-a2 <- sum(data_te2$expert == -1)/nrow(data_te2)
-accuracy_report2 <- data.frame(val_accuracy = a1, test_accuracy = a2)
-accuracy_report2
+stability_report2 <- data.frame()
+# run method 2 by changing seed
+for (i in 1:10) {
+  set.seed(i + 500) # change seed in each iteration
+  # split the data
+  new_images <- forge_new_image(images_divided, K)
+  data_tr2 <- new_images[[1]][new_images[[1]]$expert != 0,]
+  data_va2 <- new_images[[2]][new_images[[2]]$expert != 0,]
+  data_te2 <- new_images[[3]][new_images[[3]]$expert != 0,]
+  # report accuracy
+  a1 <- sum(data_va2$expert == -1)/nrow(data_va2)
+  a2 <- sum(data_te2$expert == -1)/nrow(data_te2)
+  stability_report2 <- rbind(stability_report2, data.frame(val_accuracy = a1, test_accuracy = a2))
+}
+# round off the numbers (purely aesthetic purposes)
+stability_report2 <- round(stability_report2, digits = 5)
+temp_v_mean <- round(mean(stability_report2$val_accuracy), digit = 5)
+temp_v_sd <- round(sd(stability_report2$val_accuracy), digit = 5)
+temp_t_mean <- round(mean(stability_report2$test_accuracy), digit = 5)
+temp_t_sd <- round(sd(stability_report2$test_accuracy),  digit = 5)
+
+stability_report2 <- rbind(stability_report2, 
+                           data.frame(val_accuracy = "---------", test_accuracy = "---------"), 
+                           data.frame(val_accuracy = temp_v_mean, test_accuracy = temp_t_mean), 
+                           data.frame(val_accuracy = temp_v_sd, test_accuracy = temp_t_sd))
+rownames(stability_report2) <- c(1:10,"----", "mean", "sd")
+
+stability_report2
 ```
+OBSERVATION: method2 (split & forge)'s accuracy using trivial classifier is closer to the true percent of "clear" labels in the whole data, indicating it's a better way to split the data than the method1 (trivial splitting method). 
+OBSERVATION: method2 has different average accuracy on validation and testing, indicating that validation set is slightly different from the testing set (in terms of % clear labels). This is probably associated with the "stratified sampling" idea we incorporated. However, since the difference is within 1 sd; it's also very likely due to chance. Therefore, we do not think this is an evidence against such method.
+OBSERVATION: method2's sd siginificantly decreased, after we increase K from 4 to 6. Such low sd (high stability) makes method2 very appealing. But it could also mean that such method is very dependent on how many sections we divide.
+```{r method3}
+stability_report3 <- data.frame()
+# run method 3 by changing seed
+for (i in 1:10) {
+  set.seed(i + 500) # change seed in each iteration
+  # split the data
+  new_images <- forge_random(images_divided, K)
+  data_tr3 <- new_images[[1]][new_images[[1]]$expert != 0,]
+  data_va3 <- new_images[[2]][new_images[[2]]$expert != 0,]
+  data_te3 <- new_images[[3]][new_images[[3]]$expert != 0,]
+  # report accuracy
+  a1 <- sum(data_va3$expert == -1)/nrow(data_va3)
+  a2 <- sum(data_te3$expert == -1)/nrow(data_te3)
+  stability_report3 <- rbind(stability_report3, data.frame(val_accuracy = a1, test_accuracy = a2))
+}
+
+# round off the numbers (purely aesthetic purposes)
+stability_report3 <- round(stability_report3, digits = 5)
+temp_v_mean <- round(mean(stability_report3$val_accuracy), digit = 5)
+temp_v_sd <- round(sd(stability_report3$val_accuracy), digit = 5)
+temp_t_mean <- round(mean(stability_report3$test_accuracy), digit = 5)
+temp_t_sd <- round(sd(stability_report3$test_accuracy),  digit = 5)
+
+stability_report3 <- rbind(stability_report3, 
+                           data.frame(val_accuracy = "---------", test_accuracy = "---------"), 
+                           data.frame(val_accuracy = temp_v_mean, test_accuracy = temp_t_mean), 
+                           data.frame(val_accuracy = temp_v_sd, test_accuracy = temp_t_sd))
+rownames(stability_report3) <- c(1:10,"----", "mean", "sd")
+
+stability_report3
+```
+OBSERVATION: method3 has higher sd than method2. However, method3 has average accuracy very similar across validation and testing.
+OBSERVATION: method3's sd is not changing much, as we increase K from 4 to 6.
+```{r method4}
+stability_report4 <- data.frame()
+# run method 3 by changing seed
+for (i in 1:10) {
+  set.seed(i + 500) # change seed in each iteration
+  # split the data
+  temp_storage <- rep(list(NA), 3)
+  select_index <- 1:nrow(image0_blur)
+  for (i in 1:3) {
+    temp_index <- sample(na.omit(select_index), size = nrow(image0_blur) %/% 3)
+    select_index[temp_index] <- NA
+    temp_storage[[i]] <- image0_blur[temp_index,]
+  }
+  data_tr4 <- temp_storage[[1]]
+  data_va4 <- temp_storage[[2]]
+  data_te4 <- temp_storage[[3]]
+  # report accuracy
+  a1 <- sum(data_va4$expert == -1)/nrow(data_va4)
+  a2 <- sum(data_te4$expert == -1)/nrow(data_te4)
+  stability_report4 <- rbind(stability_report4, data.frame(val_accuracy = a1, test_accuracy = a2))
+}
+
+# round off the numbers (purely aesthetic purposes)
+stability_report4 <- round(stability_report4, digits = 5)
+temp_v_mean <- round(mean(stability_report4$val_accuracy), digit = 5)
+temp_v_sd <- round(sd(stability_report4$val_accuracy), digit = 5)
+temp_t_mean <- round(mean(stability_report4$test_accuracy), digit = 5)
+temp_t_sd <- round(sd(stability_report4$test_accuracy),  digit = 5)
+
+stability_report4 <- rbind(stability_report4, 
+                           data.frame(val_accuracy = "---------", test_accuracy = "---------"), 
+                           data.frame(val_accuracy = temp_v_mean, test_accuracy = temp_t_mean), 
+                           data.frame(val_accuracy = temp_v_sd, test_accuracy = temp_t_sd))
+rownames(stability_report4) <- c(1:10,"----", "mean", "sd")
+
+stability_report4
+```
+OBSERVATION: Splitting method4 is most stable, next is method2. 
+Method4's val_accuracy is very close to test_accuracy, while other methods have quite different accuracy across validation and testing.
+We will be using method4 for the following parts, because only method4 takes advantage of neighborhood dependance.
+CONCLUSION: method4 is our best splitting method.
 ## c) feature importance
 potentially:
 1. plot histogram of each feature colored by label (just like PART I.c) and maximize the distance between mean
@@ -301,7 +464,38 @@ source("CVgeneric.R")
 # PART III. Modeling
 ## a) models & CV
 LDA requires no standardization on the feature
-```{r set training & testing data}
+```{r splitting method4}
+# select training & testing data
+tr <- rbind(data_tr4, data_va4)
+te <- data_te4
+
+######################################## do not change the below
+tr <- tr[tr$expert != 0,]
+# tr <- tr[sample(1:nrow(tr), size = 1000),]
+tr_ft <- as.data.frame(cbind(tr$NDAI, tr$CORR, tr$SD))
+colnames(tr_ft) <- c("NDAI", "CORR", "SD")
+tr_lb <- as.factor(tr$expert)
+tr <- cbind(tr_ft, tr_lb)
+colnames(tr) <- c(colnames(tr_ft), "expert")
+te <- te[te$expert != 0,]
+te_ft <- as.data.frame(cbind(te$NDAI, te$CORR, te$SD))
+colnames(te_ft) <- c("NDAI", "CORR", "SD")
+te_lb <- as.factor(te$expert)
+te <- cbind(te_ft, te_lb)
+colnames(te) <- c(colnames(te_ft), "expert")
+
+LDA_CV <- CVgeneric(lda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+QDA_CV <- CVgeneric(qda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+GLM_CV <- CVgeneric(glm.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+tre_CV <- CVgeneric(tree.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+
+CV_result <- cbind(LDA_CV, QDA_CV, GLM_CV, tre_CV)
+colnames(CV_result) <- c("LDA", "QDA", "GLM", "Tree")
+CV_result
+```
+
+```{r splitting method2}
+# select training & testing data
 tr <- rbind(data_tr2, data_va2)
 te <- data_te2
 
@@ -319,19 +513,40 @@ colnames(te_ft) <- c("NDAI", "CORR", "SD")
 te_lb <- as.factor(te$expert)
 te <- cbind(te_ft, te_lb)
 colnames(te) <- c(colnames(te_ft), "expert")
-```
 
-```{r CV on training}
 LDA_CV <- CVgeneric(lda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
 QDA_CV <- CVgeneric(qda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
 GLM_CV <- CVgeneric(glm.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
+tre_CV <- CVgeneric(tree.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
 
-CV_result <- cbind(LDA_CV, QDA_CV, GLM_CV)
-colnames(CV_result) <- c("LDA", "QDA", "GLM")
+CV_result <- cbind(LDA_CV, QDA_CV, GLM_CV, tre_CV)
+colnames(CV_result) <- c("LDA", "QDA", "GLM", "Tree")
 CV_result
 ```
-From CV, QDA is the best classifier.
+OBSERVATION: From CV, QDA is the best classifier.
+OBSERVATION: splitting method3 has higher CV scores than splitting method2.
 ## b) ROC
+```{r select the best splitting method}
+# select training & testing data
+tr <- rbind(data_tr4, data_va4)
+te <- data_te4
+
+######################################## do not change the below
+tr <- tr[tr$expert != 0,]
+# tr <- tr[sample(1:nrow(tr), size = 1000),]
+tr_ft <- as.data.frame(cbind(tr$NDAI, tr$CORR, tr$SD))
+colnames(tr_ft) <- c("NDAI", "CORR", "SD")
+tr_lb <- as.factor(tr$expert)
+tr <- cbind(tr_ft, tr_lb)
+colnames(tr) <- c(colnames(tr_ft), "expert")
+te <- te[te$expert != 0,]
+te_ft <- as.data.frame(cbind(te$NDAI, te$CORR, te$SD))
+colnames(te_ft) <- c("NDAI", "CORR", "SD")
+te_lb <- as.factor(te$expert)
+te <- cbind(te_ft, te_lb)
+colnames(te) <- c(colnames(te_ft), "expert")
+```
+
 ```{r generating ROC}
 # LDA
 LDA_fit <- lda(expert ~., data = tr)
@@ -355,29 +570,77 @@ GLM_prob <- predict(GLM_fit, te, type = "response")
 pred_GLM <- prediction(GLM_prob, labels = te$expert)
 perf_GLM <- performance(pred_GLM, "tpr", "fpr")
 auc_GLM <- performance(pred_GLM, measure = "auc")
+
+# Decision Tree
+DT_fit <- rpart::rpart(expert ~., data = tr, method = "class")
+DT_prob <- predict(DT_fit, te)
+pred_DT <- prediction(DT_prob[,2], labels = te$expert)
+perf_DT <- performance(pred_DT, "tpr", "fpr")
+auc_DT <- performance(pred_DT, measure = "auc")
 ```
 
 ```{r AUC analysis}
-AUC <- rbind(auc_LDA@y.values[[1]], auc_QDA@y.values[[1]], auc_GLM@y.values[[1]])
-rownames(AUC) <- c("LDA", "QDA", "GLM")
+AUC <- rbind(auc_LDA@y.values[[1]], auc_QDA@y.values[[1]], auc_GLM@y.values[[1]], auc_DT@y.values[[1]])
+rownames(AUC) <- c("LDA", "QDA", "GLM", "Decision Tree")
 colnames(AUC) <- "AUC"
 AUC
 ```
 
-```{r graphing ROC}
-par(mfrow=c(2,2))
-plot(perf_LDA, colorize = TRUE, main = "LDA ROC")
-  abline(a = 0, b = 1)
-  text(0.8, 0.2, "AUC = 0.9476")
-plot(perf_QDA, colorize = TRUE, main = "QDA ROC")
-  abline(a = 0, b = 1)
-  text(0.8, 0.2, "AUC = 0.9551")
-plot(perf_GLM, colorize = TRUE, main = "Logistic Regression ROC")
-  abline(a = 0, b = 1)
-  text(0.8, 0.2, "AUC = 0.9472")
+```{r cutoff}
+# this is the cutoff index
+# find cut_off that is closest to the (0,1) point
+closest_to <- function(x, y, target_x, target_y){
+  dist <- sqrt((x-target_x)^2 + (y-target_y)^2)
+  temp_index <- which.min(dist)
+  return(c(x=x[temp_index], y=y[temp_index]))
+}
+
+LDA_cut <- closest_to(x = perf_LDA@x.values[[1]], y = perf_LDA@y.values[[1]], target_x = 0, target_y = 1)
+QDA_cut <- closest_to(x = perf_QDA@x.values[[1]], y = perf_QDA@y.values[[1]], target_x = 0, target_y = 1)
+GLM_cut <- closest_to(x = perf_GLM@x.values[[1]], y = perf_GLM@y.values[[1]], target_x = 0, target_y = 1)
+DT_cut <- closest_to(x = perf_DT@x.values[[1]], y = perf_DT@y.values[[1]], target_x = 0, target_y = 1)
+
+temp <- rbind(LDA_cut, QDA_cut, GLM_cut, DT_cut)
+cutoff <- c(perf_LDA@alpha.values[[1]][min(which(perf_LDA@x.values[[1]] == LDA_cut[1]))],
+            perf_QDA@alpha.values[[1]][min(which(perf_QDA@x.values[[1]] == QDA_cut[1]))],
+            perf_GLM@alpha.values[[1]][min(which(perf_GLM@x.values[[1]] == GLM_cut[1]))],
+            perf_DT@alpha.values[[1]][min(which(perf_DT@x.values[[1]] == DT_cut[1]))])
+cutoff <- cbind(temp, cutoff)
+rownames(cutoff) <- c("LDA", "QDA", "Log_reg", "Dec_tree")
+colnames(cutoff) <- c("x", "y", "cutoff")
+cutoff
 ```
+
+```{r graphing ROC}
+# this step is slow
+range <- c(0,1)
+par(mfrow=c(2,2))
+plot(perf_LDA, colorize = TRUE, main = "LDA ROC", xlim = range, ylim = range)
+  abline(a = 0, b = 1)
+  points(x = LDA_cut[1], y = LDA_cut[2])
+  text(0.8, 0.2, paste("AUC = ", round(AUC[1], digits = 4)))
+  text(0.2, 0.8, paste("cutoff = ", round(cutoff[1,3], digits = 4)))
+plot(perf_QDA, colorize = TRUE, main = "QDA ROC", xlim = range, ylim = range)
+  abline(a = 0, b = 1)
+  points(x = QDA_cut[1], y = QDA_cut[2])
+  text(0.8, 0.2, paste("AUC = ", round(AUC[2], digits = 4)))
+  text(0.2, 0.8, paste("cutoff = ", round(cutoff[2,3], digits = 4)))
+plot(perf_GLM, colorize = TRUE, main = "Logistic Regression ROC", xlim = range, ylim = range)
+  abline(a = 0, b = 1)
+  points(x = GLM_cut[1], y = GLM_cut[2])
+  text(0.8, 0.2, paste("AUC = ", round(AUC[3], digits = 4)))
+  text(0.2, 0.8, paste("cutoff = ", round(cutoff[3,3], digits = 4)))
+plot(perf_DT, colorize = TRUE, main = "Decision Tree ROC", xlim = range, ylim = range)
+  abline(a = 0, b = 1)
+  points(x = DT_cut[1], y = DT_cut[2])
+  text(0.8, 0.2, paste("AUC = ", round(AUC[4], digits = 4)))
+  text(0.2, 0.8, paste("cutoff = ", round(cutoff[4,3], digits = 4)))
+```
+OBSERVATION: decision tree has horrible ROC result, we are not going to consider decision tree as our best model.
+OBSERVATION: QDA has highest AUC. LDA and logistic regression have similar AUC.
+OBSERVATION: because of the above observations, the data is not linearly separable in high dimensions.
 ## c) IC test
-```{r aAIC}
+```{r AICc}
 
 ```
 
@@ -385,3 +648,12 @@ plot(perf_GLM, colorize = TRUE, main = "Logistic Regression ROC")
 
 ```
 # PART IV. Diagnostics
+## a) in-depth analysis 
+```{r}
+
+```
+## b) misclassification trend
+```{r}
+
+```
+
