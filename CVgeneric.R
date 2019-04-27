@@ -26,7 +26,6 @@ CVgeneric <- function(class_fn, tr_feature, tr_label, K=10, loss_fn) {
     colnames(temp_train) <- c(colnames(temp_train_ft), "expert")
     
     # train the model using training set:
-
     #temp_model <- class_fn(data = temp_train, expert ~.)
     #temp_pred <- predict(temp_model, temp_test_ft)$class
     temp_pred <- class_fn(temp_train, temp_test_ft)
@@ -38,8 +37,8 @@ CVgeneric <- function(class_fn, tr_feature, tr_label, K=10, loss_fn) {
     # update the CV_result
     CV_result <- rbind(CV_result, temp_loss)
   }
-  mean_result <- mean(CV_result[,1])
-  CV_result <- rbind(CV_result, mean_result)
-  rownames(CV_result) <- c((1:K), "average")
+  mean_result <- round(mean(CV_result[,1]), digit = 5)
+  CV_result <- rbind(round(CV_result, digit = 5), "-------" ,mean_result)
+  rownames(CV_result) <- c((1:K), "-------" ,"average")
   return(CV_result)
 }

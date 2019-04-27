@@ -42,7 +42,7 @@ chunk2 <- function(x,n) {
 #' @title image divider
 #' @description divide a image into KxK sub-images
 #' @param input_image the input_image stored as data.frame
-#' @param K number of divider
+#' @param K square root of number of sections
 #' @return a KxK list of divided images
 divide_image <- function(input_image, K = 3){
   output <- rep(list(NA), K^2)
@@ -63,7 +63,7 @@ divide_image <- function(input_image, K = 3){
 #' @title image forger
 #' @description forge K new images using pcs divided by the divide_image function
 #' @param image_divided a list of outputs of divide_image functions
-#' @param K number of divider
+#' @param K square root of number of sections
 #' @return a K element list of new images
 forge_new_image <- function(images_divided, K){
   data_tr <- data.frame()
@@ -83,6 +83,43 @@ forge_new_image <- function(images_divided, K){
   for (i in 1:K^2) {
     temp_index <- selector_index[[i]]
     data_te <- rbind(data_te, images_divided[[temp_index]][[i]])
+  }
+  list(data_tr, data_va, data_te)
+}
+
+#' @title image sampler (simple random sampling)
+#' @description forge K new images using pcs divided by the divide_image function
+#' @param image_divided a list of outputs of divide_image functions
+#' @param K square root of number of sections
+#' @return a K element list of new images
+forge_random <- function(images_divided, K){
+  image_pool <- rep(list(NA), 3*K^2)
+  t <- 0
+  for (i in 1:3) {
+    for (j in 1:K^2) {
+      t <- t + 1
+      image_pool[[t]] <- images_divided[[i]][[j]]
+    }
+  }
+  data_tr <- data.frame()
+  data_va <- data.frame()
+  data_te <- data.frame()
+  selector_index <- 1:(3*K^2)
+  
+  for (i in 1:K^2) {
+    temp_index <- sample(selector_index, size = 1)
+    selector_index <- selector_index[selector_index != temp_index]
+    data_tr <- rbind(data_tr, image_pool[[temp_index]])
+  }
+  for (i in 1:K^2) {
+    temp_index <- sample(selector_index, size = 1)
+    selector_index <- selector_index[selector_index != temp_index]
+    data_va <- rbind(data_va, image_pool[[temp_index]])
+  }
+  for (i in 1:K^2) {
+    temp_index <- sample(selector_index, size = 1)
+    selector_index <- selector_index[selector_index != temp_index]
+    data_te <- rbind(data_te, image_pool[[temp_index]])
   }
   list(data_tr, data_va, data_te)
 }
@@ -126,6 +163,20 @@ glm.changed <- function(training_data, tbp){
   temp_probs <- predict(temp_fit, tbp, type = "response")
   temp_pred <- rep(-1, length(temp_probs))
   temp_pred[temp_probs > 0.5] <- 1
+  #temp_pred[temp_probs > 0] <- 1
+  return(temp_pred)
+}
+
+#' @title Decision Tree·改
+#' @description give prediction using GLM
+#' @param training_data data.frame of the training set, including feature and label
+#' @param tbp data.frame of features to be predicted
+#' @return predicted labels
+tree.changed <- function(training_data, tbp){
+  temp_fit <- rpart::rpart(data = training_data, expert ~., method = "class")
+  temp_probs <- predict(temp_fit, tbp)
+  temp_pred <- rep(-1, nrow(temp_probs))
+  temp_pred[temp_probs[,2] > 0.5] <- 1
   #temp_pred[temp_probs > 0] <- 1
   return(temp_pred)
 }
