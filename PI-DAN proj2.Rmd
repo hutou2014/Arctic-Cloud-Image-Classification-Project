@@ -7,7 +7,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.path = 'report_images/')
 ```
 
 ```{r loading packages}
@@ -149,51 +149,26 @@ OBSERVATION: 1st principal component captures 84.6% of variance. first 2 PCs cap
 CONCLUSION: studying the radiance readings themself may not have much results; some transformation would be very helpful; the NDAI feature created by Yu Bin and her team is very brilliant in terms of capturing the changes in a scene with changes in the MISR view direction.
 ### differences between two classes
 ```{r histogram by class}
-# other features
-  # Ham: add some summery
-summary(image0[which(image0$expert == 1),]$NDAI)
-summary(image0[which(image0$expert == -1),]$NDAI)
-ggplot(data=image0_labeled, aes(x=NDAI, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of NDAI by cloudiness")
-
-summary(image0[which(image0$expert == 1),]$SD)
-summary(image0[which(image0$expert == -1),]$SD)
-ggplot(data=image0_labeled, aes(x=SD, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of SD by cloudiness")
-
-summary(image0[which(image0$expert == 1),]$CORR)
-summary(image0[which(image0$expert == -1),]$CORR)
-ggplot(data=image0_labeled, aes(x=CORR, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of CORR by cloudiness")
-
-# radiance reading
-DF <- ggplot(data=image0_labeled, aes(x=DF, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of DF radiance")
-CF <- ggplot(data=image0_labeled, aes(x=CF, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of CF radiance")
-BF <- ggplot(data=image0_labeled, aes(x=BF, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of BF radiance")
-AF <- ggplot(data=image0_labeled, aes(x=AF, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of AF radiance")
-AN <- ggplot(data=image0_labeled, aes(x=AN, color=num2class(expert)))+
-  geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-  labs(title = "Histogram of AN radiance")
-grid.arrange(DF,CF,BF,AF,AN, ncol=2)
+# used auxiliary function to keep it looking tidy
+hist_ft <- feature_hist_by_class(image0_labeled)
+hist_ft[[1]]
+hist_ft[[2]]
+hist_ft[[3]]
+grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
 ```
 OBSERVATION: NDAI feature shows strong diversification for cloudy and clear areas. Very clearly, clear areas have less NDAI than cloudy areas. This feature could be very helpful in later part of the project.
 OBSERVATION: radiance reading: clear areas seem to have a bimodal histogram of radiance reading (all 5 of them) while cloudy areas have single-mode histogram of radiance reading. Cloudy areas have longer left-side tails. Clear areas seem to have slightly higher radiance reading (this is consistent with the paper finding as well).
 OBSERVATION: clear areas tend to have smaller SD (shorter right tails, peak around 0) than cloudy areas.
 OBSERVATION: clear areas tend to have smaller and less spreading CORR than cloudy areas.
-```{r 3D scatterplot}
-# 3D plot 太卡了
-# 暂时战术放弃
+```{r numeric: difference across class}
+summary(image0[which(image0$expert == 1),]$NDAI)
+summary(image0[which(image0$expert == -1),]$NDAI)
+
+summary(image0[which(image0$expert == 1),]$SD)
+summary(image0[which(image0$expert == -1),]$SD)
+
+summary(image0[which(image0$expert == 1),]$CORR)
+summary(image0[which(image0$expert == -1),]$CORR)
 ```
 
 # Part II: Preparation
@@ -256,6 +231,9 @@ there exist some missing areas because there exist equal number of overlapping a
 image1_blur <- read.csv(file = "image_data/image1_blur.csv", header = TRUE)
 image2_blur <- read.csv(file = "image_data/image2_blur.csv", header = TRUE)
 image3_blur <- read.csv(file = "image_data/image3_blur.csv", header = TRUE)
+image1_blur <- image1_blur[,2:12]
+image2_blur <- image2_blur[,2:12]
+image3_blur <- image3_blur[,2:12]
 image0_blur <- rbind(image1_blur, image2_blur, image3_blur)
 
 # randomly select pixels from the all constructed super pixels:
@@ -484,6 +462,7 @@ te_lb <- as.factor(te$expert)
 te <- cbind(te_ft, te_lb)
 colnames(te) <- c(colnames(te_ft), "expert")
 
+
 LDA_CV <- CVgeneric(lda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
 QDA_CV <- CVgeneric(qda.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
 GLM_CV <- CVgeneric(glm.changed, tr_feature = tr_ft, tr_label = tr_lb, K = 10, loss_fn = zero_one_loss)
@@ -531,25 +510,16 @@ OBSERVATION: splitting method3 has higher CV scores than splitting method2.
 tr <- rbind(data_tr4, data_va4)
 te <- data_te4
 
-######################################## do not change the below
-tr <- tr[tr$expert != 0,]
-# tr <- tr[sample(1:nrow(tr), size = 1000),]
-tr_ft <- as.data.frame(cbind(tr$NDAI, tr$CORR, tr$SD))
-colnames(tr_ft) <- c("NDAI", "CORR", "SD")
-tr_lb <- as.factor(tr$expert)
-tr <- cbind(tr_ft, tr_lb)
-colnames(tr) <- c(colnames(tr_ft), "expert")
-te <- te[te$expert != 0,]
-te_ft <- as.data.frame(cbind(te$NDAI, te$CORR, te$SD))
-colnames(te_ft) <- c("NDAI", "CORR", "SD")
-te_lb <- as.factor(te$expert)
-te <- cbind(te_ft, te_lb)
-colnames(te) <- c(colnames(te_ft), "expert")
+# this time we will preserve all features (easier for further analysis)
+
+# treat logistic regression differently, because this one is a little bit trickier than other:
+tr_glm <- as.data.frame(cbind(tr$NDAI, tr$CORR, tr$SD, (tr$expert + 1)/2))
+colnames(tr_glm) <- c("NDAI", "CORR", "SD", "expert")
 ```
 
 ```{r generating ROC}
 # LDA
-LDA_fit <- lda(expert ~., data = tr)
+LDA_fit <- lda(expert ~ NDAI + CORR + SD, data = tr)
 LDA_pred <- predict(LDA_fit, te)
     # choose the posterior probability column carefully, it may be 
     # lda.pred$posterior[,1] or lda.pred$posterior[,2], depending on your factor levels 
@@ -558,21 +528,21 @@ perf_LDA <- performance(pred_LDA, "tpr", "fpr")
 auc_LDA <- performance(pred_LDA, measure = "auc")
 
 # QDA
-QDA_fit <- qda(expert ~., data = tr)
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
 QDA_pred <- predict(QDA_fit, te)
 pred_QDA <- prediction(QDA_pred$posterior[,2], labels = te$expert)
 perf_QDA <- performance(pred_QDA, "tpr", "fpr")
 auc_QDA <- performance(pred_QDA, measure = "auc")
 
 # GLM
-GLM_fit <- glm(expert ~., data = tr, family = binomial)
+GLM_fit <- glm(expert ~., data = tr_glm, family = binomial)
 GLM_prob <- predict(GLM_fit, te, type = "response")
 pred_GLM <- prediction(GLM_prob, labels = te$expert)
 perf_GLM <- performance(pred_GLM, "tpr", "fpr")
 auc_GLM <- performance(pred_GLM, measure = "auc")
 
 # Decision Tree
-DT_fit <- rpart::rpart(expert ~., data = tr, method = "class")
+DT_fit <- rpart::rpart(expert ~ NDAI + CORR + SD, data = tr, method = "class")
 DT_prob <- predict(DT_fit, te)
 pred_DT <- prediction(DT_prob[,2], labels = te$expert)
 perf_DT <- performance(pred_DT, "tpr", "fpr")
@@ -607,7 +577,7 @@ cutoff <- c(perf_LDA@alpha.values[[1]][min(which(perf_LDA@x.values[[1]] == LDA_c
             perf_DT@alpha.values[[1]][min(which(perf_DT@x.values[[1]] == DT_cut[1]))])
 cutoff <- cbind(temp, cutoff)
 rownames(cutoff) <- c("LDA", "QDA", "Log_reg", "Dec_tree")
-colnames(cutoff) <- c("x", "y", "cutoff")
+colnames(cutoff) <- c("fpr", "tpr", "cutoff")
 cutoff
 ```
 
@@ -648,12 +618,104 @@ OBSERVATION: because of the above observations, the data is not linearly separab
 
 ```
 # PART IV. Diagnostics
+splitting method: smoothing + simple random sampling
+fitting model: QDA
+model testing error = 9.3332%
 ## a) in-depth analysis 
 ```{r}
 
 ```
 ## b) misclassification trend
-```{r}
-
+```{r class percentage in misclassification}
+class_percentage <- rbind(percent(table(num2class(misclassified$expert))/nrow(misclassified)),
+                          percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
+rownames(class_percentage) <- c("misclassified", "total_labeled")
+colnames(class_percentage) <- c("clear", "cloudy")
+class_percentage
 ```
+OBSERVATION: class percentage in misclassification is close to total class percentage
+CONCLUSION: the model is not biased into producing specific kind of misclassification (i.e. most of the misclassifications are false clear)
+```{r summary about the model}
+misclassified <- cbind(te[QDA_pred$class != te$expert,])
+
+# let's look at the specific part of image3 (where most misclassification of "cloudy" label come from)
+# manually selelect the interesting part
+image3_interest <- image3[image3$expert == 1 & image3$x <= 270 & image3$y >= 190,]
+image3_interest <- image3_interest[-which(image3_interest$x >= 250 & image3_interest$y >= 300),]
+image3_interest <- image3_interest[-which(image3_interest$x >= 125 & image3_interest$y >= 350),]
+image3_interest <- image3_interest[-which(image3_interest$x <= 175 & image3_interest$y <= 225),]
+image3_interest <- image3_interest[-which(image3_interest$x <= 100 & image3_interest$y <= 275),]
+
+i1 <- ggplot(data = misclassified, aes(x = x, y = y)) +
+  geom_point(colour = num2col(misclassified$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  stat_ellipse(data = image3_interest, aes(x = x, y = y), colour = "red") + 
+  labs(title = "misclassified data") + scale_y_reverse()
+i2 <- ggplot(data = image3, aes(x = x, y = y)) +
+  geom_point(colour = num2col(image3$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  stat_ellipse(data = image3_interest, aes(x = x, y = y), colour = "red") + 
+  labs(title = "Image 3") + scale_y_reverse()
+grid.arrange(i1,i2, nrow=1)
+```
+OBSERVATION: this graph looks like data image3.
+OBSERVATION: even though the testing data pixels are randomly selected, the misclassified cloudy labels (the white dots in the red oval) seem to be mainly from the image3. There definitely exist some trend in the misclassified data.
+CONCLUSION: most of misclassified cloudy data comes from image3. This is perhaps because image3 is taken at different place / different time, and image3's cloud is somehow different from image1 and 2. But most data comes from image1 and 2, thus the model trained based on image1 and 2 may not apply well to cloudy areas in image3. For the clear parts that are misclassified, it's harder to find some evidence from this graph alone.
+```{r histogram of misclassified}
+# use this histogram to compare with the histogram of all data
+hist_ft <- feature_hist_by_class(misclassified, spec = "of misclassified")
+hist_ft[[1]]
+hist_ft[[2]]
+hist_ft[[3]]
+grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
+```
+OBSERVATION: misclassified data have similar shape of distribution of feature as the non-misclassified data.
+OBSERVATION: compare the NDAI with the total data NDAI by class: cloudy areas on average have higher NDAI than clear areas on all data. (that is, the blue should be on the right side). However, this graph shows the opposite. 
+OBSERVATION: same with SD, cloudy (blue) should have longer tails than clear (red).
+OBSERVATION: CORR behaves differently from SD and NDAI. The misclassified data have very similar distribution in CORR for both classes.
+OBSERVATION: 5 radiance readings show that the misclassified true clear data tend to be the ones with lower radiance readings. Before, we dicussesed that the radiance readings seem to be bi-modal. From the graph above, we can say that these misclassified data (whose true label is clear) seem to come from the left mode (one that is also lower). It seems that the trend is those misclassified data seem to come from specific radiance reading range.
+```{r numeric analysis on misclassification}
+# standardized difference in feature 
+# misclassified V.S. total data 
+# (this one is not that important)
+feat_mean_diff_std(img1 = misclassified, imgTrue = image0_labeled)
+
+# misclassified V.S. total data (cloudy only)
+image0_cloud <- image0[image0$expert == 1,]
+misclassified_cloud <- misclassified[misclassified$expert == 1,]
+cloud_diff <- feat_mean_diff_std(img1 = misclassified_cloud, imgTrue = image0_cloud)
+
+# misclassified V.S. total data (clear only)
+image0_clear <- image0[image0$expert == -1,]
+misclassified_clear <- misclassified[misclassified$expert == -1,]
+clear_diff <- feat_mean_diff_std(img1 = misclassified_clear, imgTrue = image0_clear)
+
+difference <- as.data.frame(cbind(cloud_diff[,4], clear_diff[,4]))
+colnames(difference) <- c("false clear", "false cloudy")
+rownames(difference) <- rownames(cloud_diff)
+difference
+```
+REFERENCE: if the absolute value of standardized mean difference is large, then it means that for this feature, the misclassified data is deviated from the whole data.
+REFERENCE: we should mainly focus on NDAI, SD, CORR, because they are the only features used in the model
+OBSERVATION & CONCLUSION: false cloudy has very different NDAI and SD distribution than the total data. (the standardized mean difference is above / close to 2)
+OBSERVATION: in comparison, false clear are a little bit hard to tell by numbers (such mean difference can be well explained by due-to-chance). Keep in mind that the figure shows most false-clear are from image3. We need to do more analysis on the false-clear misclassification.
+```{r close-up examination of false-clear}
+image3_other_cloud <- image3[-as.numeric(rownames(image3_interest)),]
+image3_other_cloud <- image3_other_cloud[image3_other_cloud$expert == 1,]
+image0_other_cloud <- rbind(image1_labeled[image1_labeled$expert == 1,], 
+                            image2_labeled[image2_labeled$expert == 1,],
+                            image3_other_cloud)
+image0_cloud <- rbind(cbind(image3_interest, origin = "image3_big_cloud"), 
+                      cbind(misclassified[misclassified$expert == 1,], origin = "false_clear"),
+                      cbind(image0_other_cloud, origin = "other"))
+ggplot(data=image0_cloud, aes(x = CORR, color = origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = "Histogram of NDAI")
+hist_ft <- feature_hist_by_class_mod(input_image = image0_cloud)
+hist_ft[[1]]
+hist_ft[[2]]
+hist_ft[[3]]
+```
+OBSERVATION: strangely, the big cloud in the image3 has distribution in all 8 features the same as the rest of clouds.
+OBSERVATION: however, the big cloud in image3 and false clear have more similar distribution than false clear compared with all clouds.
 

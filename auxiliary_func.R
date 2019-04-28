@@ -30,6 +30,74 @@ percent <- function(x, digits = 2, format = "f", ...) {
   paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
 }
 
+#' @title plot histogram of features
+#' @description plot histogram of features by class
+#' @param input_image data.frame of an image
+#' @return a list of ggplot objects
+feature_hist_by_class <- function(input_image, spec = "") {
+  # other features
+  NDAI <- ggplot(data=input_image, aes(x=NDAI, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of NDAI", spec, sep = " "))
+  SD <- ggplot(data=input_image, aes(x=SD, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of SD", spec, sep = " "))
+  CORR <- ggplot(data=input_image, aes(x=CORR, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of CORR", spec, sep = " "))
+  # radiance reading
+  DF <- ggplot(data=input_image, aes(x=DF, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of DF", spec, sep = " "))
+  CF <- ggplot(data=input_image, aes(x=CF, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of CF", spec, sep = " "))
+  BF <- ggplot(data=input_image, aes(x=BF, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of BF", spec, sep = " "))
+  AF <- ggplot(data=input_image, aes(x=AF, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of AF", spec, sep = " "))
+  AN <- ggplot(data=input_image, aes(x=AN, color=num2class(expert)))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of AN", spec, sep = " "))
+  return(list(NDAI, SD, CORR, DF, CF, BF, AF, AN))
+}
+
+#' @title plot histogram of features (modified for PartIV.b)
+#' @description plot histogram of features by class
+#' @param input_image data.frame of an image
+#' @return a list of ggplot objects
+feature_hist_by_class_mod <- function(input_image, spec = "") {
+  # other features
+  NDAI <- ggplot(data=input_image, aes(x=NDAI, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of NDAI", spec, sep = " "))
+  SD <- ggplot(data=input_image, aes(x=SD, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of SD", spec, sep = " "))
+  CORR <- ggplot(data=input_image, aes(x=CORR, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of CORR", spec, sep = " "))
+  # radiance reading
+  DF <- ggplot(data=input_image, aes(x=DF, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of DF", spec, sep = " "))
+  CF <- ggplot(data=input_image, aes(x=CF, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of CF", spec, sep = " "))
+  BF <- ggplot(data=input_image, aes(x=BF, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of BF", spec, sep = " "))
+  AF <- ggplot(data=input_image, aes(x=AF, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of AF", spec, sep = " "))
+  AN <- ggplot(data=input_image, aes(x=AN, color=origin))+
+    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
+    labs(title = paste("Histogram of AN", spec, sep = " "))
+  return(list(NDAI, SD, CORR, DF, CF, BF, AF, AN))
+}
+
 #' @title split a vector into chunks
 #' @description splits a vecotr into chunks
 #' @param x input vector
@@ -139,7 +207,7 @@ zero_one_loss <- function(true_label, pred_label) {
 #' @param tbp data.frame of features to be predicted
 #' @return predicted labels
 lda.changed <- function(training_data, tbp){
-  temp_model <- lda(data = training_data, expert ~.)
+  temp_model <- lda(data = training_data, expert ~ NDAI + CORR + SD)
   return(predict(temp_model, tbp)$class)
 }
 
@@ -149,7 +217,7 @@ lda.changed <- function(training_data, tbp){
 #' @param tbp data.frame of features to be predicted
 #' @return predicted labels
 qda.changed <- function(training_data, tbp){
-  temp_model <- qda(data = training_data, expert ~.)
+  temp_model <- qda(data = training_data, expert ~ NDAI + CORR + SD)
   return(predict(temp_model, tbp)$class)
 }
 
@@ -159,7 +227,7 @@ qda.changed <- function(training_data, tbp){
 #' @param tbp data.frame of features to be predicted
 #' @return predicted labels
 glm.changed <- function(training_data, tbp){
-  temp_fit <- glm(data = training_data, expert ~., family = binomial)
+  temp_fit <- glm(data = training_data, expert ~ NDAI + CORR + SD, family = binomial)
   temp_probs <- predict(temp_fit, tbp, type = "response")
   temp_pred <- rep(-1, length(temp_probs))
   temp_pred[temp_probs > 0.5] <- 1
@@ -173,10 +241,28 @@ glm.changed <- function(training_data, tbp){
 #' @param tbp data.frame of features to be predicted
 #' @return predicted labels
 tree.changed <- function(training_data, tbp){
-  temp_fit <- rpart::rpart(data = training_data, expert ~., method = "class")
+  temp_fit <- rpart::rpart(data = training_data, expert ~ NDAI + CORR + SD, method = "class")
   temp_probs <- predict(temp_fit, tbp)
   temp_pred <- rep(-1, nrow(temp_probs))
   temp_pred[temp_probs[,2] > 0.5] <- 1
   #temp_pred[temp_probs > 0] <- 1
   return(temp_pred)
+}
+
+#' @title misclassification trend finder
+#' @description give mean difference of features between two group
+#' @param img1 first image
+#' @param imgTrue second image
+#' @return data.frame of differences
+feat_mean_diff_std <- function(img1, imgTrue){
+  feat_diff <- data.frame()
+  for (i in 1:ncol(imgTrue)) {
+    temp_diff <- (mean(img1[,i]) - mean(imgTrue[,i])) / sd(imgTrue[,i])
+    feat_diff <- rbind(feat_diff, temp_diff)
+  }
+  feat_diff <- cbind(colMeans(img1), colMeans(imgTrue), rep("|", ncol(imgTrue)) ,feat_diff)
+  colnames(feat_diff) <- c("misclass_mean", "total_mean", "|", "mean_diff(standardized)")
+  rownames(feat_diff) <- c(colnames(imgTrue))
+  feat_diff <- feat_diff[4:11,]
+  return(feat_diff)
 }
