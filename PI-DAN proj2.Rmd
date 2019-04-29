@@ -622,11 +622,62 @@ splitting method: smoothing + simple random sampling
 fitting model: QDA
 model testing error = 9.3332%
 ## a) in-depth analysis 
-```{r}
-
+```{r convergence test - model error}
+set.seed(666)
+conv_result <- conv_test(input_data = image0_blur, model = qda, K = 100)
+ggplot(data = conv_result[[1]], aes(x = train_size, y = error)) +
+  geom_line() + 
+  xlim(0,1) + ylim(0,1) + coord_fixed(ratio = 1) + 
+  labs(title = "Convergence Test of QDA model")
 ```
+OBSERVATION: QDA model's testing error converges extremeley fast.
+```{r convergence test - feature mean}
+set.seed(123)
+para_result <- conv_result[[2]]
+para_cloud <- para_result[para_result$label == 1,]
+para_clear <- para_result[para_result$label == -1,]
+i1 <- ggplot(data = para_cloud, aes(x = train_size)) +
+  geom_line(aes(y = NDAI), colour = "red") + geom_line(aes(y = CORR), colour = "blue") + geom_line(aes(y = SD), colour = "green") + labs(title = "Concergence of QDA (cloudy)") + ylab(label = "fitted mean") + xlim(0,1) + ylim(-1,11)
+i2 <- ggplot(data = para_clear, aes(x = train_size)) +
+  geom_line(aes(y = NDAI), colour = "red") + geom_line(aes(y = CORR), colour = "blue") + geom_line(aes(y = SD), colour = "green") + labs(title = "Concergence of QDA (clear)") + ylab(label = "fitted mean") + xlim(0,1) + ylim(-1,11)
+grid.arrange(i1,i2, nrow=1)
+```
+OBSERVATION: feature mean of fitted model converges also very fast.
+```{r parameter test - cutoff}
+# tuning parameters
+input_data <- image0_blur
+K <- 100
+
+set.seed(123666)
+fold_index <- createFolds(c(1:nrow(input_data)), k=K, list = TRUE)
+conv_test <- input_data[fold_index[[K]],]
+pred_err <- numeric()
+means <- data.frame()
+cuts <- numeric()
+for (i in 1:K) {
+  conv_train <- data.frame()
+  which_fold <- sample(1:K, i, replace = FALSE)
+  for (j in which_fold) {
+    conv_train <- rbind(conv_train, input_data[fold_index[[j]],])
+  }
+  temp_model <- qda(data = conv_train, expert ~ NDAI + CORR + SD)
+  temp_pred <- predict(temp_model, conv_test)
+  temp_pred <- prediction(temp_pred$posterior[,2], labels = conv_test$expert)
+  temp_perf <- performance(temp_pred, "tpr", "fpr")
+  QDA_cut <- closest_to(x = temp_perf@x.values[[1]], y = temp_perf@y.values[[1]], target_x = 0, target_y = 1)
+  temp_cutoff <- temp_perf@alpha.values[[1]][min(which(temp_perf@x.values[[1]] == QDA_cut[1]))]
+  cuts <- c(cuts, temp_cutoff)
+}
+para_result <- data.frame(train_size = round((1:K)/K, digits = 3), cutoff = cuts)
+
+ggplot(data = para_result, aes(x = train_size, y = cutoff)) +
+  geom_line(colour = "blue") + labs(title = "Parameter Estimation stability & convergence") + ylab(label = "ROC cutoff") + xlim(0,1) + ylim(0,1) + coord_fixed(ratio = 1)
+```
+OBSERVATION: parameter (ROC cutoff) also converges very fast.
 ## b) misclassification trend
 ```{r class percentage in misclassification}
+misclassified <- cbind(te[QDA_pred$class != te$expert,])
+
 class_percentage <- rbind(percent(table(num2class(misclassified$expert))/nrow(misclassified)),
                           percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
 rownames(class_percentage) <- c("misclassified", "total_labeled")
@@ -636,8 +687,6 @@ class_percentage
 OBSERVATION: class percentage in misclassification is close to total class percentage
 CONCLUSION: the model is not biased into producing specific kind of misclassification (i.e. most of the misclassifications are false clear)
 ```{r summary about the model}
-misclassified <- cbind(te[QDA_pred$class != te$expert,])
-
 # let's look at the specific part of image3 (where most misclassification of "cloudy" label come from)
 # manually selelect the interesting part
 image3_interest <- image3[image3$expert == 1 & image3$x <= 270 & image3$y >= 190,]
@@ -708,9 +757,6 @@ image0_other_cloud <- rbind(image1_labeled[image1_labeled$expert == 1,],
 image0_cloud <- rbind(cbind(image3_interest, origin = "image3_big_cloud"), 
                       cbind(misclassified[misclassified$expert == 1,], origin = "false_clear"),
                       cbind(image0_other_cloud, origin = "other"))
-ggplot(data=image0_cloud, aes(x = CORR, color = origin))+
-    geom_histogram(fill="white", alpha=0.5, position="identity", bins = 30)+
-    labs(title = "Histogram of NDAI")
 hist_ft <- feature_hist_by_class_mod(input_image = image0_cloud)
 hist_ft[[1]]
 hist_ft[[2]]
@@ -718,4 +764,103 @@ hist_ft[[3]]
 ```
 OBSERVATION: strangely, the big cloud in the image3 has distribution in all 8 features the same as the rest of clouds.
 OBSERVATION: however, the big cloud in image3 and false clear have more similar distribution than false clear compared with all clouds.
+## c) no code
+## d) using a different splitting
+splitting method: forge + simple random sampling
+fitting model: QDA
+model testing error = 13.5264%
+```{r reset data splitting}
+tr <- rbind(data_tr3, data_va3)
+te <- data_te3
+```
+### a) in-depth analysis 
+```{r convergence test - model error}
+set.seed(1973)
+K <- 3
 
+temp_divided <- c(divide_image(image1_labeled, K), divide_image(image2_labeled, K), divide_image(image3_labeled, K))
+K <- length(temp_divided)
+conv_test <- temp_divided[[K]]
+pred_err <- numeric()
+for (i in 1:(K-1)) {
+  conv_train <- data.frame()
+  temp_index <- sample(1:(K-1), i, replace = FALSE)
+  for (j in temp_index) {
+    conv_train <-rbind(conv_train, temp_divided[[j]])
+  }
+  temp_model <- qda(data = conv_train, expert ~ NDAI + CORR + SD)
+  temp_pred <- predict(temp_model, conv_test)$class
+  pred_err <- c(pred_err, 1 - zero_one_loss(conv_test$expert, temp_pred))
+}
+convergence_result <- data.frame(train_size = round((1:(K-1))/K, digits = 3), error = pred_err)
+convergence_result
+
+ggplot(data = convergence_result, aes(x = train_size, y = error)) +
+  geom_line() + 
+  xlim(0,1) + ylim(0,1) + coord_fixed(ratio = 1) + 
+  labs(title = "Convergence Test of QDA model")
+```
+Convergence takes longer than smoothing method splitting. Given that method3 already has almost ten times observations, it still takes longer to converge. Although this one is smoother (it fluctuates less after convergence). This is most likely due to larger number of observations
+### b) misclassification trend
+```{r class percentage in misclassification}
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+misclassified <- cbind(te[QDA_pred$class != te$expert,])
+
+class_percentage <- rbind(percent(table(num2class(misclassified$expert))/nrow(misclassified)),
+                          percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
+rownames(class_percentage) <- c("misclassified", "total_labeled")
+colnames(class_percentage) <- c("clear", "cloudy")
+class_percentage
+
+nrow(misclassified) / nrow(data_te2)
+```
+OBSERVATION: class percentage in misclassification is different than total class percentage
+OBSERVATION: testing error went up from 9.3332% to 14.6620% (after switching data splitting method from smoothing to method3)
+CONCLUSION: after changing splitting method, the model is biased into producing more false clear error. also the model produces more testing errors.
+```{r summary about the model}
+# let's look at the specific part of image3 (where most misclassification of "cloudy" label come from)
+# manually selelect the interesting part
+i1 <- ggplot(data = misclassified, aes(x = x, y = y)) +
+  geom_point(colour = num2col(misclassified$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "misclassified data (splitting method 3)") + scale_y_reverse()
+i2 <- ggplot(data = data_te2, aes(x = x, y = y)) +
+  geom_point(colour = num2col(data_te2$expert), size = 0.1) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  labs(title = "testing data (splitting method 3)") + scale_y_reverse()
+grid.arrange(i1, i2, nrow=1)
+```
+OBSERVATION: most of misclassified data come from certain areas of the testing data
+```{r histogram of misclassified}
+# use this histogram to compare with the histogram of all data
+hist_ft <- feature_hist_by_class(misclassified, spec = "of misclassified")
+hist_ft[[1]]
+hist_ft[[2]]
+hist_ft[[3]]
+grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
+```
+OBSERVATION: misclassified data have very different shape of distribution of feature as the non-misclassified data.
+```{r numeric analysis on misclassification}
+# standardized difference in feature 
+# misclassified V.S. total data 
+# (this one is not that important)
+feat_mean_diff_std(img1 = misclassified, imgTrue = image0_labeled)
+
+# misclassified V.S. total data (cloudy only)
+image0_cloud <- image0[image0$expert == 1,]
+misclassified_cloud <- misclassified[misclassified$expert == 1,]
+cloud_diff <- feat_mean_diff_std(img1 = misclassified_cloud, imgTrue = image0_cloud)
+
+# misclassified V.S. total data (clear only)
+image0_clear <- image0[image0$expert == -1,]
+misclassified_clear <- misclassified[misclassified$expert == -1,]
+clear_diff <- feat_mean_diff_std(img1 = misclassified_clear, imgTrue = image0_clear)
+
+difference <- as.data.frame(cbind(cloud_diff[,4], clear_diff[,4]))
+colnames(difference) <- c("false clear", "false cloudy")
+rownames(difference) <- rownames(cloud_diff)
+difference
+```
+OBSERVATION: this part is similar to part b).
+CONCLUSION: after changing the data splitting method, result in b) changes: the big cloud in image3 is not introducing systematic error anymore. However, 

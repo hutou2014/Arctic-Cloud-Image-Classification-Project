@@ -249,6 +249,36 @@ tree.changed <- function(training_data, tbp){
   return(temp_pred)
 }
 
+#' @title Convergency test for model
+#' @description test how long does a model converge
+#' @param input_data data.frame of data set
+#' @param K number of folds used
+#' @param model what model to use
+#' @return a list of data.frames of convergency result
+conv_test <- function(K, input_data, model){
+  fold_index <- createFolds(c(1:nrow(input_data)), k=K, list = TRUE)
+  conv_test <- input_data[fold_index[[K]],]
+  pred_err <- numeric()
+  means <- data.frame()
+  for (i in 1:(K-1)) {
+    conv_train <- data.frame()
+    which_fold <- sample(1:K, i, replace = FALSE)
+    for (j in which_fold) {
+      conv_train <-rbind(conv_train, input_data[fold_index[[j]],])
+    }
+    temp_model <- model(data = conv_train, expert ~ NDAI + CORR + SD)
+    temp_pred <- predict(temp_model, conv_test)$class
+    temp_means <- data.frame(temp_model$means)
+    temp_means <- cbind(temp_means, rownames(temp_means))
+    means <- rbind(means, temp_means)
+    pred_err <- c(pred_err, 1 - zero_one_loss(conv_test$expert, temp_pred))
+  }
+  convergence_result <- data.frame(train_size = round((1:(K-1))/K, digits = 3), error = pred_err)
+  means <- as.data.frame(cbind(round((1:(K-1))/K, digits = 3), means))
+  colnames(means) <- c("train_size", "NDAI", "CORR", "SD", "label")
+  return(list(convergence_result, means))
+}
+
 #' @title misclassification trend finder
 #' @description give mean difference of features between two group
 #' @param img1 first image
