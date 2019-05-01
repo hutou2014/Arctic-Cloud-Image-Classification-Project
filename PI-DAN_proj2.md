@@ -83,20 +83,10 @@ library(ROCR)
     ##     lowess
 
 ``` r
-library(pROC)
-```
-
-    ## Type 'citation("pROC")' for a citation.
-
-    ## 
-    ## Attaching package: 'pROC'
-
-    ## The following objects are masked from 'package:stats':
-    ## 
-    ##     cov, smooth, var
-
-``` r
 library(gplots)
+
+# AIC
+library(mvtnorm)
 ```
 
 ``` r
@@ -1012,12 +1002,63 @@ plot(perf_DT, colorize = TRUE, main = "Decision Tree ROC", xlim = range, ylim = 
   text(0.2, 0.8, paste("cutoff = ", round(cutoff[4,3], digits = 4)))
 ```
 
-![](report_images/graphing%20ROC-1.png) OBSERVATION: decision tree has horrible ROC result, we are not going to consider decision tree as our best model. OBSERVATION: QDA has highest AUC. LDA and logistic regression have similar AUC. OBSERVATION: because of the above observations, the data is not linearly separable in high dimensions. \#\# c) IC test
+![](report_images/graphing%20ROC-1.png) OBSERVATION: decision tree has horrible ROC result, we are not going to consider decision tree as our best model. OBSERVATION: QDA has highest AUC. LDA and logistic regression have similar AUC. OBSERVATION: because of the above observations, the data is not linearly separable in high dimensions. \#\# c) IC test / likelihood
+
+``` r
+# LDA
+LDA_pred <- predict(LDA_fit, tr)
+LDA_fit_cloud <- tr[which(LDA_pred$class == 1),]
+LDA_fit_clear <- tr[which(LDA_pred$class == -1),]
+LDA_prior <- LDA_fit$prior
+LDA_cov <- cov(LDA_fit_cloud[,4:6])*LDA_prior[2] + cov(LDA_fit_clear[,4:6])*LDA_prior[1]
+LDA_cloud_mean <- colMeans(LDA_fit_cloud[,4:6])
+LDA_clear_mean <- colMeans(LDA_fit_clear[,4:6])
+log_lik <- 0
+for (r in 1:nrow(tr)){
+  log_lik <- log_lik + log(LDA_prior[2]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_cloud_mean, sigma=LDA_cov) + LDA_prior[1]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_clear_mean, sigma=LDA_cov))
+}
+log_lik_LDA <- as.numeric(log_lik)
+AIC_LDA  <- -2*log_lik_LDA + 5
+
+# QDA
+QDA_pred <- predict(QDA_fit, tr)
+QDA_fit_cloud <- tr[which(QDA_pred$class == 1),]
+QDA_fit_clear <- tr[which(QDA_pred$class == -1),]
+QDA_prior <- QDA_fit$prior
+QDA_cloud_mean <- colMeans(QDA_fit_cloud[,4:6])
+QDA_clear_mean <- colMeans(QDA_fit_clear[,4:6])
+log_lik <- 0
+for (r in 1:nrow(tr)){
+  log_lik <- log_lik + log(LDA_prior[2]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_cloud_mean, sigma=cov(LDA_fit_cloud[,4:6])) + LDA_prior[1]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_clear_mean, sigma=cov(LDA_fit_clear[,4:6])))
+}
+log_lik_QDA <- as.numeric(log_lik)
+AIC_QDA  <- -2*log_lik_QDA + 6
+
+AIC_result <- round(c(AIC_LDA, AIC_QDA, AIC(GLM_fit)), digits = 0)
+BIC_result <- round(c(-2*log_lik_LDA + log(nrow(tr))*5, -2*log_lik_QDA + log(nrow(tr))*6, BIC(GLM_fit)), digit = 0)
+IC_test <- rbind(AIC_result, BIC_result)
+colnames(IC_test) <- c("LDA", "QDA", "log_reg")
+
+IC_test
+```
+
+    ##               LDA   QDA log_reg
+    ## AIC_result 108162 84301    7859
+    ## BIC_result 108205 84353    7890
 
 PART IV. Diagnostics
 ====================
 
-splitting method: smoothing + simple random sampling fitting model: QDA model testing error = 9.3332% \#\# a) in-depth analysis
+splitting method: smoothing + simple random sampling fitting model: QDA model testing error = 9.3332%
+
+``` r
+# below was masked during AIC test, now restore:
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+```
+
+a) in-depth analysis
+--------------------
 
 ``` r
 set.seed(666)
@@ -1078,7 +1119,11 @@ ggplot(data = para_result, aes(x = train_size, y = cutoff)) +
 ![](report_images/parameter%20test%20-%20cutoff-1.png) OBSERVATION: parameter (ROC cutoff) also converges very fast. \#\# b) misclassification trend
 
 ``` r
-misclassified <- cbind(te[QDA_pred$class != te$expert,])
+tr <- rbind(data_tr4, data_va4)
+te <- data_te4
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+misclassified <- te[QDA_pred$class != te$expert,]
 
 class_percentage <- rbind(percent(table(num2class(misclassified$expert))/nrow(misclassified)),
                           percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
@@ -1226,7 +1271,122 @@ hist_ft[[2]]
 hist_ft[[3]]
 ```
 
-![](report_images/close-up%20examination%20of%20false-clear-3.png) OBSERVATION: strangely, the big cloud in the image3 has distribution in all 8 features the same as the rest of clouds. OBSERVATION: however, the big cloud in image3 and false clear have more similar distribution than false clear compared with all clouds. \#\# c) no code \#\# d) using a different splitting splitting method: forge + simple random sampling fitting model: QDA model testing error = 13.5264%
+![](report_images/close-up%20examination%20of%20false-clear-3.png) OBSERVATION: strangely, the big cloud in the image3 has distribution in all 8 features the same as the rest of clouds. OBSERVATION: however, the big cloud in image3 and false clear have more similar distribution than false clear compared with all clouds. \#\# c) new model NEW MODEL: take square root of all 3 features, still use QDA + blurring method JUSTIFICATION: to decrease feature variance
+
+``` r
+tr <- rbind(data_tr4, data_va4)
+te <- rbind(data_te4)
+
+# square root the 3 features: NDAI, SD, CORR
+tr$NDAI <- log(tr$NDAI - min(tr$NDAI) + 1)
+tr$SD <- log(tr$SD - min(tr$SD) + 1)
+tr$CORR <- log(tr$CORR - min(tr$CORR) + 1)
+te$NDAI <- log(te$NDAI - min(te$NDAI) + 1)
+te$SD <- log(te$SD - min(te$SD) + 1)
+te$CORR <- log(te$CORR - min(te$CORR) + 1)
+
+# 10-fold CV:
+set.seed(789234)
+QDA_CV_changed <- CVgeneric(qda.changed, tr_feature = tr[,4:6], tr_label = tr[,3], K = 10, loss_fn = zero_one_loss)
+
+# compare with old method
+QDA_compare <- cbind(QDA_CV, QDA_CV_changed)
+colnames(QDA_compare) <- c("old_model", "new_model")
+QDA_compare
+```
+
+    ##         old_model new_model
+    ## 1         0.89733   0.91995
+    ## 2         0.90339   0.91339
+    ## 3         0.89928   0.91076
+    ## 4         0.90373   0.91798
+    ## 5         0.89823   0.91136
+    ## 6         0.89969   0.90414
+    ## 7         0.90095   0.91667
+    ## 8         0.89879   0.92186
+    ## 9         0.90004   0.89429
+    ## 10        0.90109   0.90814
+    ## -------   -------   -------
+    ## average   0.90025   0.91185
+
+OBSERVATION: Cross Validation improved by 1 percent.
+
+``` r
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+misclassified_new <- te[QDA_pred$class != te$expert,]
+
+class_percentage <- rbind(percent(table(num2class(misclassified_new$expert))/nrow(misclassified_new)),
+                          percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
+rownames(class_percentage) <- c("misclassified", "total_labeled")
+colnames(class_percentage) <- c("clear", "cloudy")
+class_percentage
+```
+
+    ##               clear    cloudy  
+    ## misclassified "65.16%" "34.84%"
+    ## total_labeled "61.08%" "38.92%"
+
+OBSERVATION: misclassification is not biased either. same as original model
+
+``` r
+i1 <- ggplot(data = misclassified_new, aes(x = x, y = y)) +
+  geom_point(colour = num2col(misclassified_new$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  stat_ellipse(data = image3_interest, aes(x = x, y = y), colour = "red") + 
+  labs(title = "misclassified data (new model)") + scale_y_reverse()
+```
+
+    ## Scale for 'y' is already present. Adding another scale for 'y', which
+    ## will replace the existing scale.
+
+``` r
+i2 <- ggplot(data = misclassified, aes(x = x, y = y)) +
+  geom_point(colour = num2col(misclassified$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  stat_ellipse(data = image3_interest, aes(x = x, y = y), colour = "red") + 
+  labs(title = "misclassified data (old model)") + scale_y_reverse()
+```
+
+    ## Scale for 'y' is already present. Adding another scale for 'y', which
+    ## will replace the existing scale.
+
+``` r
+grid.arrange(i1,i2, nrow=1)
+```
+
+![](report_images/misclassification%20-%20new%20model-1.png) OBSERVATION: The "big cloud" in image 3 is still causing problem, as one can see in the red oval. However, the new model has more misclassified clear data that is not part of systematic error (total number of misclassification is roughly the same, but there are more misclassified clear outside the chunk), indicating that the new model improves systematic error (just slightly) on the misclassified clear (false cloudy).
+
+``` r
+# use this histogram to compare with the histogram of all data
+hist_ft <- feature_hist_by_class(misclassified_new, spec = "of misclassified (new model)")
+hist_ft[[1]]
+```
+
+![](report_images/histogram%20of%20misclassified%20-%20new%20model-1.png)
+
+``` r
+hist_ft[[2]]
+```
+
+![](report_images/histogram%20of%20misclassified%20-%20new%20model-2.png)
+
+``` r
+hist_ft[[3]]
+```
+
+![](report_images/histogram%20of%20misclassified%20-%20new%20model-3.png)
+
+``` r
+grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
+```
+
+![](report_images/histogram%20of%20misclassified%20-%20new%20model-4.png)
+
+d) using a different splitting
+------------------------------
+
+splitting method: forge + simple random sampling fitting model: QDA model testing error = 13.5264%
 
 ``` r
 tr <- rbind(data_tr3, data_va3)
@@ -1370,7 +1530,7 @@ hist_ft[[3]]
 grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
 ```
 
-![](report_images/histogram%20of%20misclassified2-4.png) OBSERVATION: misclassified data have very different shape of distribution of feature as the non-misclassified data.
+![](report_images/histogram%20of%20misclassified2-4.png) OBSERVATION:
 
 ``` r
 # standardized difference in feature 

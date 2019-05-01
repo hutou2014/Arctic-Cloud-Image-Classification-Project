@@ -3,7 +3,7 @@ title: "proj2"
 author: "Xuanfu Lu"
 partner: "Honghao Huang"
 date: "4/16/2019"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -30,8 +30,10 @@ library('e1071')
 
 # ROC
 library(ROCR)
-library(pROC)
 library(gplots)
+
+# AIC
+library(mvtnorm)
 ```
 
 ```{r read the image_data}
@@ -609,18 +611,55 @@ plot(perf_DT, colorize = TRUE, main = "Decision Tree ROC", xlim = range, ylim = 
 OBSERVATION: decision tree has horrible ROC result, we are not going to consider decision tree as our best model.
 OBSERVATION: QDA has highest AUC. LDA and logistic regression have similar AUC.
 OBSERVATION: because of the above observations, the data is not linearly separable in high dimensions.
-## c) IC test
-```{r AICc}
+## c) IC test / likelihood
+```{r AIC+BIC}
+# LDA
+LDA_pred <- predict(LDA_fit, tr)
+LDA_fit_cloud <- tr[which(LDA_pred$class == 1),]
+LDA_fit_clear <- tr[which(LDA_pred$class == -1),]
+LDA_prior <- LDA_fit$prior
+LDA_cov <- cov(LDA_fit_cloud[,4:6])*LDA_prior[2] + cov(LDA_fit_clear[,4:6])*LDA_prior[1]
+LDA_cloud_mean <- colMeans(LDA_fit_cloud[,4:6])
+LDA_clear_mean <- colMeans(LDA_fit_clear[,4:6])
+log_lik <- 0
+for (r in 1:nrow(tr)){
+  log_lik <- log_lik + log(LDA_prior[2]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_cloud_mean, sigma=LDA_cov) + LDA_prior[1]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_clear_mean, sigma=LDA_cov))
+}
+log_lik_LDA <- as.numeric(log_lik)
+AIC_LDA  <- -2*log_lik_LDA + 5
 
+# QDA
+QDA_pred <- predict(QDA_fit, tr)
+QDA_fit_cloud <- tr[which(QDA_pred$class == 1),]
+QDA_fit_clear <- tr[which(QDA_pred$class == -1),]
+QDA_prior <- QDA_fit$prior
+QDA_cloud_mean <- colMeans(QDA_fit_cloud[,4:6])
+QDA_clear_mean <- colMeans(QDA_fit_clear[,4:6])
+log_lik <- 0
+for (r in 1:nrow(tr)){
+  log_lik <- log_lik + log(LDA_prior[2]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_cloud_mean, sigma=cov(LDA_fit_cloud[,4:6])) + LDA_prior[1]*dmvnorm(x=as.vector(tr[,4:6][r,]), mean=LDA_clear_mean, sigma=cov(LDA_fit_clear[,4:6])))
+}
+log_lik_QDA <- as.numeric(log_lik)
+AIC_QDA  <- -2*log_lik_QDA + 6
+
+AIC_result <- round(c(AIC_LDA, AIC_QDA, AIC(GLM_fit)), digits = 0)
+BIC_result <- round(c(-2*log_lik_LDA + log(nrow(tr))*5, -2*log_lik_QDA + log(nrow(tr))*6, BIC(GLM_fit)), digit = 0)
+IC_test <- rbind(AIC_result, BIC_result)
+colnames(IC_test) <- c("LDA", "QDA", "log_reg")
+
+IC_test
 ```
 
-```{r BIC}
-
-```
 # PART IV. Diagnostics
 splitting method: smoothing + simple random sampling
 fitting model: QDA
 model testing error = 9.3332%
+```{r reset}
+# below was masked during AIC test, now restore:
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+```
+
 ## a) in-depth analysis 
 ```{r convergence test - model error}
 set.seed(666)
@@ -676,7 +715,11 @@ ggplot(data = para_result, aes(x = train_size, y = cutoff)) +
 OBSERVATION: parameter (ROC cutoff) also converges very fast.
 ## b) misclassification trend
 ```{r class percentage in misclassification}
-misclassified <- cbind(te[QDA_pred$class != te$expert,])
+tr <- rbind(data_tr4, data_va4)
+te <- data_te4
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+misclassified <- te[QDA_pred$class != te$expert,]
 
 class_percentage <- rbind(percent(table(num2class(misclassified$expert))/nrow(misclassified)),
                           percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
@@ -764,7 +807,66 @@ hist_ft[[3]]
 ```
 OBSERVATION: strangely, the big cloud in the image3 has distribution in all 8 features the same as the rest of clouds.
 OBSERVATION: however, the big cloud in image3 and false clear have more similar distribution than false clear compared with all clouds.
-## c) no code
+## c) new model
+NEW MODEL: take square root of all 3 features, still use QDA + blurring method
+JUSTIFICATION: to decrease feature variance
+```{r CV for new model}
+tr <- rbind(data_tr4, data_va4)
+te <- rbind(data_te4)
+
+# square root the 3 features: NDAI, SD, CORR
+tr$NDAI <- log(tr$NDAI - min(tr$NDAI) + 1)
+tr$SD <- log(tr$SD - min(tr$SD) + 1)
+tr$CORR <- log(tr$CORR - min(tr$CORR) + 1)
+te$NDAI <- log(te$NDAI - min(te$NDAI) + 1)
+te$SD <- log(te$SD - min(te$SD) + 1)
+te$CORR <- log(te$CORR - min(te$CORR) + 1)
+
+# 10-fold CV:
+set.seed(789234)
+QDA_CV_changed <- CVgeneric(qda.changed, tr_feature = tr[,4:6], tr_label = tr[,3], K = 10, loss_fn = zero_one_loss)
+
+# compare with old method
+QDA_compare <- cbind(QDA_CV, QDA_CV_changed)
+colnames(QDA_compare) <- c("old_model", "new_model")
+QDA_compare
+```
+OBSERVATION: Cross Validation improved by 1 percent.
+```{r}
+QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
+QDA_pred <- predict(QDA_fit, te)
+misclassified_new <- te[QDA_pred$class != te$expert,]
+
+class_percentage <- rbind(percent(table(num2class(misclassified_new$expert))/nrow(misclassified_new)),
+                          percent(table(num2class(image0_labeled$expert))/nrow(image0_labeled)))
+rownames(class_percentage) <- c("misclassified", "total_labeled")
+colnames(class_percentage) <- c("clear", "cloudy")
+class_percentage
+```
+OBSERVATION: misclassification is not biased either. same as original model
+```{r misclassification - new model}
+i1 <- ggplot(data = misclassified_new, aes(x = x, y = y)) +
+  geom_point(colour = num2col(misclassified_new$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  stat_ellipse(data = image3_interest, aes(x = x, y = y), colour = "red") + 
+  labs(title = "misclassified data (new model)") + scale_y_reverse()
+i2 <- ggplot(data = misclassified, aes(x = x, y = y)) +
+  geom_point(colour = num2col(misclassified$expert), size = 0.9) +
+  xlim(50,400) + ylim(0,400) + coord_fixed(ratio = 1) +
+  stat_ellipse(data = image3_interest, aes(x = x, y = y), colour = "red") + 
+  labs(title = "misclassified data (old model)") + scale_y_reverse()
+grid.arrange(i1,i2, nrow=1)
+```
+OBSERVATION: The "big cloud" in image 3 is still causing problem, as one can see in the red oval. However, the new model has more misclassified clear data that is not part of systematic error (total number of misclassification is roughly the same, but there are more misclassified clear outside the chunk), indicating that the new model improves systematic error (just slightly) on the misclassified clear (false cloudy).
+```{r histogram of misclassified - new model}
+# use this histogram to compare with the histogram of all data
+hist_ft <- feature_hist_by_class(misclassified_new, spec = "of misclassified (new model)")
+hist_ft[[1]]
+hist_ft[[2]]
+hist_ft[[3]]
+grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
+```
+
 ## d) using a different splitting
 splitting method: forge + simple random sampling
 fitting model: QDA
@@ -774,7 +876,7 @@ tr <- rbind(data_tr3, data_va3)
 te <- data_te3
 ```
 ### a) in-depth analysis 
-```{r convergence test - model error}
+```{r convergence test - model error2}
 set.seed(1973)
 K <- 3
 
@@ -802,7 +904,7 @@ ggplot(data = convergence_result, aes(x = train_size, y = error)) +
 ```
 Convergence takes longer than smoothing method splitting. Given that method3 already has almost ten times observations, it still takes longer to converge. Although this one is smoother (it fluctuates less after convergence). This is most likely due to larger number of observations
 ### b) misclassification trend
-```{r class percentage in misclassification}
+```{r class percentage in misclassification2}
 QDA_fit <- qda(expert ~ NDAI + CORR + SD, data = tr)
 QDA_pred <- predict(QDA_fit, te)
 misclassified <- cbind(te[QDA_pred$class != te$expert,])
@@ -818,7 +920,7 @@ nrow(misclassified) / nrow(data_te2)
 OBSERVATION: class percentage in misclassification is different than total class percentage
 OBSERVATION: testing error went up from 9.3332% to 14.6620% (after switching data splitting method from smoothing to method3)
 CONCLUSION: after changing splitting method, the model is biased into producing more false clear error. also the model produces more testing errors.
-```{r summary about the model}
+```{r summary about the model2}
 # let's look at the specific part of image3 (where most misclassification of "cloudy" label come from)
 # manually selelect the interesting part
 i1 <- ggplot(data = misclassified, aes(x = x, y = y)) +
@@ -832,7 +934,7 @@ i2 <- ggplot(data = data_te2, aes(x = x, y = y)) +
 grid.arrange(i1, i2, nrow=1)
 ```
 OBSERVATION: most of misclassified data come from certain areas of the testing data
-```{r histogram of misclassified}
+```{r histogram of misclassified2}
 # use this histogram to compare with the histogram of all data
 hist_ft <- feature_hist_by_class(misclassified, spec = "of misclassified")
 hist_ft[[1]]
@@ -840,8 +942,8 @@ hist_ft[[2]]
 hist_ft[[3]]
 grid.arrange(hist_ft[[4]], hist_ft[[5]], hist_ft[[6]], hist_ft[[7]], hist_ft[[8]])
 ```
-OBSERVATION: misclassified data have very different shape of distribution of feature as the non-misclassified data.
-```{r numeric analysis on misclassification}
+OBSERVATION: 
+```{r numeric analysis on misclassification2}
 # standardized difference in feature 
 # misclassified V.S. total data 
 # (this one is not that important)
