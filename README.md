@@ -1,6 +1,6 @@
 # stat154_proj2
 
-team member: Honghao Huang, Xuanfu Lu
+team member: H. Ham Huang, Xuanfu Lu
 
 How to reproduce:
 1. download the entire github repository, including the images
