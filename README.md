@@ -8,5 +8,5 @@ How to reproduce:
 3. run PI-DAN_proj2.Rmd with Rstudio, using R version 3.5.2, remember to set working directory to source file location. Rmd file will be sourcing the CV_generic.R and auxiliary_func.R; please make sure they are in the same file.
 4. knit the PI-DAN_proj2.Rmd using Rstudio.
 5. the output image should be inside the report_images file created by Rstudio
-6. open Stat154proj2writeup.tex and compile, if you want to replace images, simply replace them using new images, but please remember to change the file name accordingly. Images used in this file are a subset of total images.
+6. open Stat154proj2writeup.tex in the report_proj2 folder and compile, if you want to replace images, simply replace them using new images, but please remember to change the file name accordingly. Images used in this file are a subset of total images.
 7. Last but not the least, do not change the structure of the repository, otherwise you will get errors.
