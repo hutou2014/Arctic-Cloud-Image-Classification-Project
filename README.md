@@ -1,4 +1,4 @@
-# stat154_proj2
+# Arctic Cloud Image Classification Project
 
 team member: H. Ham Huang, Xuanfu Lu
 
